@@ -15,14 +15,14 @@
 
 ```
 ┌─ SSH-X ────────────────────────────────────────  SPLIT →  SPLIT ↓  12:04:31 ─┐
-│ SAVED SESSIONS      │ [prod-db] │ [home] │ +                                │
-│                     ├───────────────────────────┬──────────────────────────┤
-│ ▸ prod-db      EDIT │ [SSH: root@10.0.0.4:22]   │ SFTP EXPLORER            │
-│ ▸ staged       EDIT │ $ git status              │  ↑ UP  /srv/www          │
-│ ▸ router       EDIT │ On branch main            │  DIR  .git               │
-│ ▸ [LOCAL SHELL] EDIT│ nothing to commit         │  FILE index.html   12 KB │
-│                     │ $ █                       │  FILE app.js       88 KB │
-│ + ADD SESSION       │                           │  3 dirs, 12 files        │
+│ SAVED SESSIONS      │ [prod-db] │ [home] │ +                                 │
+│                     ├───────────────────────────┬────────────────────────────┤
+│ ▸ prod-db      EDIT │ [SSH: root@10.0.0.4:22]   │ SFTP EXPLORER              │
+│ ▸ staged       EDIT │ $ git status              │  ↑ UP  /srv/www            │
+│ ▸ router       EDIT │ On branch main            │  DIR  .git                 │
+│ ▸ [LOCAL SHELL] EDIT│ nothing to commit         │  FILE index.html   12 KB   │
+│                     │ $ █                       │  FILE app.js       88 KB   │
+│ + ADD SESSION       │                           │  3 dirs, 12 files          │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
