@@ -1,0 +1,133 @@
+name: Release
+
+# Publishes a GitHub release whenever a version tag is pushed:
+#
+#   git tag v1.0.1 && git push origin v1.0.1
+#
+# The tag must point at a commit whose package.json version matches the tag
+# (checked below). Bumping the version is a manual, deliberate act:
+#   npm version patch|minor|major   -> commit + tag -> release
+#
+# The tag is created upstream by you; here the build runs first and the
+# GitHub release (with all artifacts) is published only afterwards.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g. v1.0.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+# Never run two releases at the same time.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-latest
+    steps:
+      - name: Checkout the tagged revision
+        uses: actions/checkout@v4
+        with:
+          # For a manual run, check out the tag given in the input instead of
+          # the branch the workflow was dispatched from.
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Keeps the artifact filename, the tag and the release consistent.
+      - name: Verify the tag matches package.json
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$INPUT_TAG" ]]; then
+            git fetch --tags --force
+            git checkout -q "$INPUT_TAG"
+          fi
+
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v$VERSION"
+          ACTUAL="${INPUT_TAG:-$(git describe --tags --exact-match)}"
+
+          if [[ "$ACTUAL" != "$TAG" ]]; then
+            echo "::error::Tag $ACTUAL does not match package.json version $TAG. Run \`npm version <level>\` and push a matching tag."
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify (typecheck, lint, build)
+        run: npm run verify
+
+      # Unsigned unless the signing secrets are configured (CSC_LINK,
+      # CSC_KEY_PASSWORD and the APPLE_* notarization trio); the README documents
+      # the Gatekeeper workaround for unsigned builds.
+      #
+      # The secrets are intentionally NOT mapped to their real names directly:
+      # a missing secret resolves to an empty string, and a *defined but empty*
+      # CSC_LINK makes electron-builder try to read a certificate file and die
+      # with "not a file". Only non-empty ones are exported below.
+      - name: Package universal DMG and ZIP
+        env:
+          _CSC_LINK: ${{ secrets.CSC_LINK }}
+          _CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          _APPLE_ID: ${{ secrets.APPLE_ID }}
+          _APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          _APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for pair in \
+            CSC_LINK:_CSC_LINK \
+            CSC_KEY_PASSWORD:_CSC_KEY_PASSWORD \
+            APPLE_ID:_APPLE_ID \
+            APPLE_APP_SPECIFIC_PASSWORD:_APPLE_APP_SPECIFIC_PASSWORD \
+            APPLE_TEAM_ID:_APPLE_TEAM_ID; do
+            dst="${pair%%:*}"
+            src="${pair##*:}"
+            if [ -n "${!src:-}" ]; then
+              export "$dst=${!src}"
+            fi
+          done
+          npx electron-builder --mac --universal --publish never
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          dmg=$(ls release/*.dmg)
+
+          # One DMG asset, empty description, title "SSH-X vX.Y.Z"; GitHub
+          # attaches the source code zip/tar.gz automatically.
+          gh release create "$TAG" "$dmg" --title "SSH-X $TAG" --notes "" --verify-tag
+
+      - name: Upload artifacts to the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-x-${{ steps.version.outputs.version }}-universal
+          if-no-files-found: error
+          path: |
+            release/*.dmg

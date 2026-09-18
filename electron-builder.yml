@@ -1,0 +1,84 @@
+appId: com.sshx.terminal
+productName: ssh-x
+copyright: Copyright © 2026 ssh-x
+
+# No native module is rebuilt for Electron:
+#   - node-pty ships N-API prebuilds for darwin-arm64/darwin-x64 (see the file
+#     filters below, which deliberately keep them and drop build/**);
+#   - ssh2 ships its own prebuilt lib/protocol/crypto/build/Release/sshcrypto.node;
+#   - cpu-features (optional, ssh2 uses it only to detect CPU crypto support) is
+#     Nan-based and cannot compile against Electron 42's V8, which would abort
+#     the whole build. ssh2 falls back to its JS implementation without it.
+# Set this back to true only if a dependency really needs a per-Electron build.
+npmRebuild: false
+
+# Used by `electron-builder --publish always` (kept as a fallback for manual
+# publishing). The release workflow does not use it: it packages with
+# `--publish never` and creates the release with `gh release create`, which lets
+# it bump the version, push the tag and generate release notes in one place.
+publish:
+  provider: github
+  owner: lxstatmose
+  repo: ssh-x
+  releaseType: release
+
+directories:
+  buildResources: assets
+  output: release
+
+files:
+  - "src/main/**"
+  - "dist/renderer/**"
+  - "node_modules/**"
+  - "package.json"
+  # cpu-features is an optional ssh2 dependency. `npm ci` compiles it for the
+  # host Node (works fine), but its binary is identical in both universal
+  # slices and is NOT arch-specific, so @electron/universal rejects it
+  # ("same in both x64 and arm64 builds"). Excluded entirely: ssh2 only uses
+  # it to detect CPU crypto support and falls back to its JS implementation.
+  - "!**/node_modules/cpu-features/**"
+# node-pty resolves its native binding from build/Release FIRST, then
+# build/Debug, then prebuilds/{platform}-{arch} (see node-pty/lib/utils.js).
+# @electron/rebuild writes build/Release + bin/darwin-{currentarch}-*/ for a
+# single arch only, which would make a universal build load the wrong slice on
+# the other arch. Exclude those so node-pty falls back to its prebuilds dir,
+# which ships correct arm64 AND x64 binaries (pty.node + spawn-helper).
+  - "!**/node_modules/node-pty/build/**"
+  - "!**/node_modules/node-pty/bin/**"
+  # node-pty ships Windows prebuilds in the same npm package; strip them from
+  # the macOS app to shrink the bundle.
+  - "!**/node_modules/node-pty/prebuilds/win32-*/**"
+
+# node-pty MUST be unpacked from ASAR since it's a native module
+asar: true
+asarUnpack:
+  - "node_modules/node-pty/**"
+
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/icon.icns
+  target:
+    # A single universal build lipo-merges the Electron binary; node-pty's
+    # prebuilds (kept by the file filter above) supply both arch slices, so
+    # one DMG runs natively on Apple Silicon and Intel Macs.
+    - target: dmg
+      arch: [universal]
+  darkModeSupport: true
+  # mergeASARs + x64ArchFiles make the universal build possible despite
+  # node-pty shipping byte-identical foreign-arch prebuilds in one package.
+  # With mergeASARs off, @electron/universal aborts on the first shared
+  # file ("same in both builds"). Turning it on lets the merger keep the x64
+  # prebuild slices as x64-only (minimatch glob, single string) and lipo
+  # -merge the rest.
+  mergeASARs: true
+  x64ArchFiles: "**/node_modules/{node-pty/prebuilds/**,ssh2/lib/protocol/crypto/build/Release/**}"
+
+dmg:
+  title: "SSH-X Terminal"
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications

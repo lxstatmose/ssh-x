@@ -1,0 +1,85 @@
+name: Bug report
+description: Something in SSH-X does not work as expected
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please fill in as much as you can — protocol and
+        reproduction details are what make a bug fixable.
+
+  - type: input
+    id: version
+    attributes:
+      label: SSH-X version
+      description: Shown in the About dialog (click the SSH-X title) or in the DMG file name.
+      placeholder: '1.0.0'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Which connection type is affected?
+      options:
+        - SSH terminal
+        - SFTP file manager
+        - FTP / FTPS
+        - Telnet
+        - Local terminal
+        - Sessions / UI (tabs, splits, sidebar)
+        - Packaging / first launch
+    validations:
+      required: true
+
+  - type: dropdown
+    id: run-mode
+    attributes:
+      label: How are you running it?
+      options:
+        - Packaged build (DMG / .app)
+        - Development mode (npm run dev)
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and CPU
+      placeholder: 'macOS 15.3, Apple Silicon'
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a saved SSH session
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include exact error text if there is any.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Output of the shell running `npm run dev`, or DevTools console output.
+      render: shell
+    validations:
+      required: false

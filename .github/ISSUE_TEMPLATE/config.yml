@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/lxstatmose/ssh-x/security/advisories/new
+    about: Please report security issues privately, not as a public issue.
+  - name: Question or idea
+    url: https://github.com/lxstatmose/ssh-x/discussions
+    about: Ask questions and discuss ideas with the community.

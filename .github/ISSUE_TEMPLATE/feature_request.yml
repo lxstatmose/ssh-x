@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an idea or an iTerm2/MobaXterm-style feature
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the workflow that is currently painful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+    validations:
+      required: true
+
+  - type: input
+    id: reference
+    attributes:
+      label: Similar feature in another client
+      description: Optional — e.g. "iTerm2: Send to all panes", "MobaXterm: tunnels".
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+    validations:
+      required: false

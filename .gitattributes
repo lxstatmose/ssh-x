@@ -1,0 +1,12 @@
+# Keep a stable, reviewable diff: everything text defaults to LF, but .cmd/.bat
+# scripts (Windows) must keep CRLF, and binary assets stay untouched.
+* text=auto eol=lf
+
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+*.png binary
+*.icns binary
+*.ttf binary
+*.dmg binary
+*.zip binary
