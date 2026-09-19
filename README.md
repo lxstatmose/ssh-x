@@ -186,6 +186,16 @@ Bug reports and pull requests are welcome. Use Conventional Commit subjects
 (`fix(sftp): ...`, `feat(terminal): ...`) — they end up in the release notes.
 Report security issues privately via [GitHub security advisories](../../security/advisories/new).
 
+## Support
+
+> **USDT (TRC20)**: `TXW6HqP7WkroKyu4jMi6A643if2cQ2QWAu`  
+> **TON**: `UQCBkdr09Hj6zZ6eSHTs0vA6A_w56w9Yh_o1xLjQHtXrgO9J`  
+> **ETH**: `0x3F56eCbA65b6E57B622FA477f1c663c8C7D7cc27`  
+
+The project is completely free for everyone.  
+However, its development and stable operation as the user base grows require investment.  
+I would appreciate any form of support! Thank you!
+
 ## License
 
 [ISC](LICENSE)
