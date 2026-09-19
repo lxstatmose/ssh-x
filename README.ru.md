@@ -172,6 +172,16 @@ Issues и pull requests приветствуются. Используй Convent
 Уязвимости сообщай приватно через
 [security advisories](../../security/advisories/new), а не публичными issue.
 
+## Поддержка
+
+> **USDT (TRC20)**: `TXW6HqP7WkroKyu4jMi6A643if2cQ2QWAu`  
+> **TON**: `UQCBkdr09Hj6zZ6eSHTs0vA6A_w56w9Yh_o1xLjQHtXrgO9J`  
+> **ETH**: `0x3F56eCbA65b6E57B622FA477f1c663c8C7D7cc27`  
+
+Проект полностью бесплатен для всех.  
+Однако его развитие и стабильная работа при росте числа пользователей требуют вложений.  
+Буду благодарен за любую форму поддержки! Спасибо!
+
 ## Лицензия
 
 [ISC](LICENSE)
