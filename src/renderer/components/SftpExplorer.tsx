@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SftpFile } from '../global';
+import { showToast, showConfirm } from './Dialogs';
 
 interface SftpExplorerProps {
   tabId: string;
@@ -146,9 +147,9 @@ export const SftpExplorer: React.FC<SftpExplorerProps> = ({ tabId, isConnected, 
     setLoading(true);
     try {
       const res = await window.api.sftpDownload(tabId, remoteFilePath, file.name);
-      if (res.success) alert(`Downloaded to ${res.localPath}`);
-      else if (!res.aborted) alert(`Error: ${res.error}`);
-    } catch (err: any) { alert(`Error: ${err.message}`); }
+      if (res.success) showToast(`Downloaded to ${res.localPath}`, 'success');
+      else if (!res.aborted) showToast(`Error: ${res.error}`, 'error');
+    } catch (err: any) { showToast(`Error: ${err.message}`, 'error'); }
     finally { setLoading(false); }
   };
 
@@ -172,10 +173,10 @@ export const SftpExplorer: React.FC<SftpExplorerProps> = ({ tabId, isConnected, 
       if (res.success) {
         loadDirectory(currentPath);
       } else if (!res.aborted) {
-        alert(`ERROR: ${res.error}`);
+        showToast(`ERROR: ${res.error}`, 'error');
       }
     } catch (err: any) {
-      alert(`ERROR: ${err.message}`);
+      showToast(`ERROR: ${err.message}`, 'error');
     } finally {
       setLoading(false);
     }
@@ -184,14 +185,19 @@ export const SftpExplorer: React.FC<SftpExplorerProps> = ({ tabId, isConnected, 
   const handleDelete = async (file: SftpFile, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setContextMenu(null);
-    if (!confirm(`Delete ${file.name}?`)) return;
+    const ok = await showConfirm({
+      title: 'DELETE',
+      message: `Delete "${file.name}"? This cannot be undone.`,
+      confirmLabel: 'DELETE'
+    });
+    if (!ok) return;
     const remoteFilePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
     setLoading(true);
     try {
       const res = await window.api.sftpDelete(tabId, remoteFilePath, file.isDir);
       if (res.success) loadDirectory(currentPath);
-      else alert(`Error: ${res.error}`);
-    } catch (err: any) { alert(`Error: ${err.message}`); }
+      else showToast(`Error: ${res.error}`, 'error');
+    } catch (err: any) { showToast(`Error: ${err.message}`, 'error'); }
     finally { setLoading(false); }
   };
 
@@ -212,10 +218,10 @@ export const SftpExplorer: React.FC<SftpExplorerProps> = ({ tabId, isConnected, 
       if (res.success) {
         loadDirectory(currentPath);
       } else {
-        alert(`ERROR: ${res.error}`);
+        showToast(`ERROR: ${res.error}`, 'error');
       }
     } catch (err: any) {
-      alert(`ERROR: ${err.message}`);
+      showToast(`ERROR: ${err.message}`, 'error');
     } finally {
       setLoading(false);
     }
@@ -233,7 +239,7 @@ export const SftpExplorer: React.FC<SftpExplorerProps> = ({ tabId, isConnected, 
     const trimmed = newName.trim();
     if (!target || !trimmed || trimmed === target.name) return;
     if (trimmed.includes('/')) {
-      alert('ERROR: name must not contain "/"');
+      showToast('ERROR: name must not contain "/"', 'error');
       return;
     }
 
@@ -245,9 +251,9 @@ export const SftpExplorer: React.FC<SftpExplorerProps> = ({ tabId, isConnected, 
     try {
       const res = await window.api.sftpRename(tabId, oldPath, newPath);
       if (res.success) loadDirectory(currentPath);
-      else alert(`ERROR: ${res.error}`);
+      else showToast(`ERROR: ${res.error}`, 'error');
     } catch (err: any) {
-      alert(`ERROR: ${err.message}`);
+      showToast(`ERROR: ${err.message}`, 'error');
     } finally {
       setLoading(false);
     }
@@ -340,7 +346,7 @@ export const SftpExplorer: React.FC<SftpExplorerProps> = ({ tabId, isConnected, 
             // the preload through webUtils.getPathForFile (see preload.js).
             const localPath = window.api.getPathForFile(file);
             if (!localPath) {
-              alert(`ERROR: cannot resolve local path for ${file.name}`);
+              showToast(`ERROR: cannot resolve local path for ${file.name}`, 'error');
               continue;
             }
             const targetRemotePath = currentPath === '/'
@@ -352,10 +358,10 @@ export const SftpExplorer: React.FC<SftpExplorerProps> = ({ tabId, isConnected, 
               if (res.success) {
                 loadDirectory(currentPath);
               } else {
-                alert(`ERROR: ${res.error}`);
+                showToast(`ERROR: ${res.error}`, 'error');
               }
             } catch (err: any) {
-              alert(`ERROR: ${err.message}`);
+              showToast(`ERROR: ${err.message}`, 'error');
             } finally {
               setLoading(false);
             }

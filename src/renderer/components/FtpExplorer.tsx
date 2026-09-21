@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SftpFile } from '../global';
+import { showToast, showConfirm } from './Dialogs';
 
 interface FtpExplorerProps {
   tabId: string;
@@ -123,22 +124,27 @@ export const FtpExplorer: React.FC<FtpExplorerProps> = ({ tabId, isConnected, on
     setLoading(true);
     try {
       const res = await window.api.ftpDownload(tabId, remoteFilePath, file.name);
-      if (res.success) alert(`Downloaded to ${res.localPath}`);
-      else if (!res.aborted) alert(`Error: ${res.error}`);
-    } catch (err: any) { alert(`Error: ${err.message}`); }
+      if (res.success) showToast(`Downloaded to ${res.localPath}`, 'success');
+      else if (!res.aborted) showToast(`Error: ${res.error}`, 'error');
+    } catch (err: any) { showToast(`Error: ${err.message}`, 'error'); }
     finally { setLoading(false); }
   };
 
   const handleDelete = async (file: SftpFile) => {
     setContextMenu(null);
-    if (!confirm(`Delete ${file.name}?`)) return;
+    const ok = await showConfirm({
+      title: 'DELETE',
+      message: `Delete "${file.name}"? This cannot be undone.`,
+      confirmLabel: 'DELETE'
+    });
+    if (!ok) return;
     const remoteFilePath = currentPath === '/' ? `/${file.name}` : `${currentPath.endsWith('/') ? currentPath : currentPath + '/'}${file.name}`;
     setLoading(true);
     try {
       const res = await window.api.ftpDelete(tabId, remoteFilePath, file.isDir);
       if (res.success) loadDirectory(currentPath);
-      else alert(`Error: ${res.error}`);
-    } catch (err: any) { alert(`Error: ${err.message}`); }
+      else showToast(`Error: ${res.error}`, 'error');
+    } catch (err: any) { showToast(`Error: ${err.message}`, 'error'); }
     finally { setLoading(false); }
   };
 
@@ -158,8 +164,8 @@ export const FtpExplorer: React.FC<FtpExplorerProps> = ({ tabId, isConnected, on
     try {
       const res = await window.api.ftpUpload(tabId, currentPath);
       if (res.success) loadDirectory(currentPath);
-      else if (!res.aborted) alert(`Error: ${res.error}`);
-    } catch (err: any) { alert(`Error: ${err.message}`); }
+      else if (!res.aborted) showToast(`Error: ${res.error}`, 'error');
+    } catch (err: any) { showToast(`Error: ${err.message}`, 'error'); }
     finally { setLoading(false); }
   };
 
@@ -173,8 +179,8 @@ export const FtpExplorer: React.FC<FtpExplorerProps> = ({ tabId, isConnected, on
     try {
       const res = await window.api.ftpCreateDir(tabId, remoteDirPath);
       if (res.success) loadDirectory(currentPath);
-      else alert(`Error: ${res.error}`);
-    } catch (err: any) { alert(`Error: ${err.message}`); }
+      else showToast(`Error: ${res.error}`, 'error');
+    } catch (err: any) { showToast(`Error: ${err.message}`, 'error'); }
     finally { setLoading(false); }
   };
 
@@ -262,7 +268,7 @@ export const FtpExplorer: React.FC<FtpExplorerProps> = ({ tabId, isConnected, on
             // the preload through webUtils.getPathForFile (see preload.js).
             const localPath = window.api.getPathForFile(file);
             if (!localPath) {
-              alert(`Error: cannot resolve local path for ${file.name}`);
+              showToast(`Error: cannot resolve local path for ${file.name}`, 'error');
               continue;
             }
             const targetRemotePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
@@ -270,8 +276,8 @@ export const FtpExplorer: React.FC<FtpExplorerProps> = ({ tabId, isConnected, on
             try {
               const res = await window.api.ftpUploadFile(tabId, localPath, targetRemotePath);
               if (res.success) loadDirectory(currentPath);
-              else alert(`Error: ${res.error}`);
-            } catch (err: any) { alert(`Error: ${err.message}`); }
+              else showToast(`Error: ${res.error}`, 'error');
+            } catch (err: any) { showToast(`Error: ${err.message}`, 'error'); }
             finally { setLoading(false); }
           }
         }}
