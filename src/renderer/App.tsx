@@ -2,11 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { SshConfig } from './global';
 import { SessionTab } from './components/SessionTab';
 import { CustomSelect } from './components/CustomSelect';
+import { DialogHost, showToast, showConfirm } from './components/Dialogs';
 
 interface PanelState {
   id: string;
   type: 'ssh' | 'ftp' | 'telnet' | 'local' | 'new';
   config?: SshConfig;
+  // File-transfer session (SFTP/FTP): the panel opens with the file manager
+  // filling it; the terminal/console is one MINIMIZE FILES click away
+  filesFirst?: boolean;
 }
 
 interface TabState {
@@ -27,6 +31,29 @@ const emptySession: SshConfig = {
   protocol: 'ssh',
   secure: false,
 };
+
+// SFTP rides on SSH: same host/port/credentials, different panel layout.
+const isSshProtocol = (proto?: string) => !proto || proto === 'ssh' || proto === 'sftp';
+
+// Protocols whose whole point is working with files: their sessions open with
+// the file manager filling the panel (SFTP over SSH, FTP/FTPS)
+const isFileProtocol = (proto?: string) => proto === 'sftp' || proto === 'ftp';
+
+// Label a tab after the session it holds - used when CLOSE leaves a tab with a
+// single panel behind (closing a local terminal used to keep "Local Terminal"
+// on top of the still-open SFTP panel)
+function panelSessionTitle(panel: PanelState): string {
+  if (panel.type === 'new') return '[NEW PANEL]';
+  const cfg = panel.config;
+  if (!cfg) return '[SESSION]';
+  if (cfg.name) return cfg.name;
+  const protocol = cfg.protocol || panel.type;
+  if (protocol === 'local') return '[LOCAL SHELL]';
+  if (protocol === 'telnet') return `${cfg.host}`;
+  if (protocol === 'sftp') return `SFTP ${cfg.username}@${cfg.host}`;
+  if (protocol === 'ftp') return `FTP ${cfg.username}@${cfg.host}`;
+  return `${cfg.username}@${cfg.host}`;
+}
 
 // ─── Reusable prompt dialog ──────────────────────────────────────────────────
 interface PromptDialogProps {
@@ -90,7 +117,7 @@ const AboutDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <div style={{ fontSize: '24px', fontWeight: 'bold', letterSpacing: '3px', marginBottom: '8px' }}>SSH-X</div>
           <div style={{ color: 'var(--gray-700)', fontSize: '13px', marginBottom: '20px' }}>SSH & SFTP Client</div>
           <div style={{ borderTop: '1px solid var(--gray-300)', paddingTop: '16px', color: 'var(--gray-600)', fontSize: '12px' }}>
-            Version 1.0.0
+            Version 1.0.1
           </div>
           <div style={{ color: 'var(--gray-600)', fontSize: '12px', marginTop: '8px' }}>
             © 2026 SSH-X
@@ -151,11 +178,11 @@ export default function App() {
   const handleSaveSession = (configToSave: SshConfig, defaultName?: string, mode: 'quick' | 'modal' = 'modal') => {
     const proto = configToSave.protocol || 'ssh';
     if (proto !== 'local' && !configToSave.host) {
-      alert('Host is required!');
+      showToast('Host is required!', 'error');
       return;
     }
     if (proto !== 'telnet' && proto !== 'local' && !configToSave.username) {
-      alert('Username is required!');
+      showToast('Username is required!', 'error');
       return;
     }
     const suggested = defaultName || configToSave.name || (proto === 'local' ? 'Local Terminal' : proto === 'telnet' ? `${configToSave.host}` : `${configToSave.username}@${configToSave.host}`);
@@ -166,18 +193,19 @@ export default function App() {
   const handleDirectSave = async (configToSave: SshConfig) => {
     const proto = configToSave.protocol || 'ssh';
     if (proto !== 'local' && !configToSave.host) {
-      alert('Host is required!');
+      showToast('Host is required!', 'error');
       return;
     }
     if (proto !== 'telnet' && proto !== 'local' && !configToSave.username) {
-      alert('Username is required!');
+      showToast('Username is required!', 'error');
       return;
     }
     try {
       const updated = await window.api.saveSession(configToSave);
       setSessions(updated);
+      showToast('Session saved', 'success');
     } catch (err: any) {
-      alert(`Failed to save: ${err.message}`);
+      showToast(`Failed to save: ${err.message}`, 'error');
     }
   };
 
@@ -193,12 +221,13 @@ export default function App() {
     try {
       const updated = await window.api.saveSession(sessionObj);
       setSessions(updated);
+      showToast('Session saved', 'success');
       if (mode === 'modal' || mode === 'quick') {
         setShowModal(false);
         setModalConfig({ ...emptySession });
       }
     } catch (err: any) {
-      alert(`Failed to save: ${err.message}`);
+      showToast(`Failed to save: ${err.message}`, 'error');
     }
     setSavePrompt(null);
   };
@@ -207,14 +236,21 @@ export default function App() {
     setSavePrompt(null);
   };
 
-  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
+  // DEL asks via the in-app confirm dialog; deletion only happens on agreement
+  const handleDeleteSession = async (id: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this session?')) return;
+    const ok = await showConfirm({
+      title: 'DELETE SESSION',
+      message: `Are you sure you want to delete "${name}"? This cannot be undone.`,
+      confirmLabel: 'DELETE'
+    });
+    if (!ok) return;
     try {
       const updated = await window.api.deleteSession(id);
       setSessions(updated);
+      showToast('Session deleted', 'success');
     } catch (err: any) {
-      alert(`Failed to delete: ${err.message}`);
+      showToast(`Failed to delete: ${err.message}`, 'error');
     }
   };
 
@@ -231,7 +267,7 @@ export default function App() {
   const launchSession = (config: SshConfig, targetTabId?: string) => {
     const protocol = config.protocol || 'ssh';
     if (protocol === 'local') {
-      launchLocalSession(targetTabId, config.name || '[LOCAL SHELL]');
+      launchLocalSession(targetTabId, config.name || '[LOCAL SHELL]', config);
       return;
     }
     const activeTab = tabs.find(t => t.id === (targetTabId || activeTabId));
@@ -241,7 +277,12 @@ export default function App() {
     };
     const newPanel: PanelState = {
       id: `conn-${Math.random().toString(36).substring(2, 9)}`,
-      type: protocol,
+      // SFTP is an SSH session that opens files-first
+      type: protocol === 'sftp' ? 'ssh' : protocol,
+      // File protocols (SFTP over SSH, FTP/FTPS) are all about files: their
+      // panel opens with the file manager filling it (MINIMIZE FILES brings
+      // the console back)
+      filesFirst: isFileProtocol(protocol),
       config: { ...configWithId }
     };
     const title = config.name || `${config.username}@${config.host}`;
@@ -260,12 +301,14 @@ export default function App() {
     }
   };
 
-  const launchLocalSession = (targetTabId?: string, customTitle?: string) => {
+  const launchLocalSession = (targetTabId?: string, customTitle?: string, config?: SshConfig) => {
     const activeTab = tabs.find(t => t.id === (targetTabId || activeTabId));
     const title = customTitle || '[LOCAL SHELL]';
     const newPanel: PanelState = {
       id: `conn-${Math.random().toString(36).substring(2, 9)}`,
-      type: 'local'
+      type: 'local',
+      // Saved local sessions keep their config so the panel can show the name
+      config: config ? { ...config } : undefined
     };
     if (activeTab && activeTab.panels.length === 0) {
       setTabs(prev => prev.map(t => {
@@ -314,7 +357,14 @@ export default function App() {
     setTabs(prev => prev.map(t => {
       if (t.id === tabId) {
         const updatedPanels = t.panels.filter(p => p.id !== panelId);
-        return { ...t, title: updatedPanels.length === 0 ? '[NEW SESSION]' : t.title, panels: updatedPanels };
+        // Retitle the tab after the session that remains: closing the local
+        // terminal of a split used to keep "Local Terminal" on top of the
+        // still-open SFTP/SSH panel
+        return {
+          ...t,
+          title: updatedPanels.length === 0 ? '[NEW SESSION]' : panelSessionTitle(updatedPanels[0]),
+          panels: updatedPanels
+        };
       }
       return t;
     }));
@@ -349,7 +399,13 @@ export default function App() {
     }));
   };
 
-  const launchSshInPanel = (tabId: string, panelId: string, config: SshConfig) => {
+  // Launch any session (saved or quick) into an empty split pane. Dispatching
+  // by protocol is what keeps a saved local terminal a local terminal: it used
+  // to be forced through the SSH launcher, which pointed SSH at an empty host
+  // and produced "*** SSH CONNECTION CLOSED ***". Saved FTP/telnet sessions
+  // were broken in the same way.
+  const launchSessionInPanel = (tabId: string, panelId: string, config: SshConfig) => {
+    const protocol = config.protocol || 'ssh';
     const configWithId = { ...config, id: config.id || Math.random().toString(36).substring(2, 9) };
     setTabs(prev => prev.map(t => {
       if (t.id !== tabId) return t;
@@ -357,11 +413,23 @@ export default function App() {
         ...t,
         panels: t.panels.map(p =>
           p.id === panelId
-            ? { id: `conn-${Math.random().toString(36).substring(2, 9)}`, type: 'ssh' as const, config: { ...configWithId } }
+            ? {
+                id: `conn-${Math.random().toString(36).substring(2, 9)}`,
+                // SFTP is an SSH session that opens files-first
+                type: protocol === 'sftp' ? 'ssh' : protocol,
+                filesFirst: isFileProtocol(protocol),
+                config: { ...configWithId }
+              }
             : p
         )
       };
     }));
+  };
+
+  const launchSshInPanel = (tabId: string, panelId: string, config: SshConfig) => {
+    // The quick-connect form in a split pane is SSH-only; saved sessions carry
+    // their own protocol and go through launchSessionInPanel instead.
+    launchSessionInPanel(tabId, panelId, { ...config, protocol: 'ssh' });
   };
 
   const launchLocalInPanel = (tabId: string, panelId: string) => {
@@ -392,6 +460,9 @@ export default function App() {
           onCancel={handleSavePromptCancel}
         />
       )}
+
+      {/* In-app toasts + confirm dialogs (replaces native alert/confirm) */}
+      <DialogHost />
 
       {/* About dialog */}
       {showAbout && (
@@ -446,7 +517,7 @@ export default function App() {
                   <span className="session-name">{sess.name || (sess.protocol === 'local' ? 'Local Terminal' : `${sess.username}@${sess.host}`)}</span>
                   <span className="session-item-actions">
                     <button className="action-btn-small" onClick={(e) => handleEditSessionClick(sess, e)}>EDIT</button>
-                    <button className="action-btn-small btn-danger" onClick={(e) => handleDeleteSession(sess.id!, e)}>DEL</button>
+                    <button className="action-btn-small btn-danger" onClick={(e) => handleDeleteSession(sess.id!, sess.name || `${sess.username}@${sess.host}`, e)}>DEL</button>
                   </span>
                 </div>
               ))
@@ -485,12 +556,13 @@ export default function App() {
                           value={quickConfig.protocol || 'ssh'}
                           options={[
                             { value: 'ssh', label: 'SSH' },
+                            { value: 'sftp', label: 'SFTP (FILE MANAGER)' },
                             { value: 'ftp', label: 'FTP / FTPS' },
                             { value: 'telnet', label: 'TELNET' },
                             { value: 'local', label: 'LOCAL TERMINAL' },
                           ]}
                           onChange={(proto) => {
-                            const defaultPort = proto === 'ssh' ? '22' : proto === 'ftp' ? '21' : '23';
+                            const defaultPort = proto === 'ftp' ? '21' : proto === 'telnet' ? '23' : '22';
                             setQuickConfig(p => ({ ...p, protocol: proto as any, port: defaultPort }));
                           }}
                         />
@@ -514,7 +586,7 @@ export default function App() {
                               <input type="number" placeholder={quickConfig.protocol === 'ftp' ? '21' : quickConfig.protocol === 'telnet' ? '23' : '22'} value={quickConfig.port}
                                 onChange={(e) => setQuickConfig(p => ({ ...p, port: e.target.value }))} />
                             </div>
-                            {(quickConfig.protocol === 'ssh' || quickConfig.protocol === 'ftp' || !quickConfig.protocol) && (
+                            {(isSshProtocol(quickConfig.protocol) || quickConfig.protocol === 'ftp') && (
                               <div className="form-group">
                                 <label>USERNAME</label>
                                 <input type="text" placeholder="root" value={quickConfig.username}
@@ -523,7 +595,7 @@ export default function App() {
                             )}
                           </div>
 
-                          {(quickConfig.protocol === 'ssh' || !quickConfig.protocol) && (
+                          {(isSshProtocol(quickConfig.protocol)) && (
                             <div className="form-group">
                               <label>AUTHENTICATION METHOD</label>
                               <CustomSelect
@@ -537,7 +609,7 @@ export default function App() {
                             </div>
                           )}
 
-                          {(quickConfig.protocol === 'ssh' || !quickConfig.protocol) && quickConfig.authMethod === 'password' && (
+                          {(isSshProtocol(quickConfig.protocol)) && quickConfig.authMethod === 'password' && (
                             <div className="form-group">
                               <label>PASSWORD</label>
                               <input type="password" placeholder="••••••••" value={quickConfig.password || ''}
@@ -545,7 +617,7 @@ export default function App() {
                             </div>
                           )}
 
-                          {(quickConfig.protocol === 'ssh' || !quickConfig.protocol) && quickConfig.authMethod === 'key' && (
+                          {(isSshProtocol(quickConfig.protocol)) && quickConfig.authMethod === 'key' && (
                             <div className="form-row">
                               <div className="form-group">
                                 <label>KEY FILE PATH</label>
@@ -613,6 +685,7 @@ export default function App() {
                   splitDirections={splitDirections[tab.id] || []}
                   onClosePanel={(panelId) => handleClosePanel(tab.id, panelId)}
                   onLaunchSsh={(panelId, config) => launchSshInPanel(tab.id, panelId, config)}
+                  onLaunchSession={(panelId, config) => launchSessionInPanel(tab.id, panelId, config)}
                   onLaunchLocal={(panelId) => launchLocalInPanel(tab.id, panelId)}
                   onSaveSession={handleDirectSave}
                 />
@@ -640,12 +713,13 @@ export default function App() {
                 value={modalConfig.protocol || 'ssh'}
                 options={[
                   { value: 'ssh', label: 'SSH' },
+                  { value: 'sftp', label: 'SFTP (FILE MANAGER)' },
                   { value: 'ftp', label: 'FTP / FTPS' },
                   { value: 'telnet', label: 'TELNET' },
                   { value: 'local', label: 'LOCAL TERMINAL' },
                 ]}
                 onChange={(proto) => {
-                  const defaultPort = proto === 'ssh' ? '22' : proto === 'ftp' ? '21' : '23';
+                  const defaultPort = proto === 'ftp' ? '21' : proto === 'telnet' ? '23' : '22';
                   setModalConfig(p => ({ ...p, protocol: proto as any, port: defaultPort }));
                 }}
               />
@@ -668,7 +742,7 @@ export default function App() {
                     <input type="number" placeholder={modalConfig.protocol === 'ftp' ? '21' : modalConfig.protocol === 'telnet' ? '23' : '22'} value={modalConfig.port}
                       onChange={(e) => setModalConfig(p => ({ ...p, port: e.target.value }))} />
                   </div>
-                  {(modalConfig.protocol === 'ssh' || modalConfig.protocol === 'ftp' || !modalConfig.protocol) && (
+                  {(isSshProtocol(modalConfig.protocol) || modalConfig.protocol === 'ftp') && (
                     <div className="form-group">
                       <label>USERNAME</label>
                       <input type="text" placeholder="root" value={modalConfig.username}
@@ -677,7 +751,7 @@ export default function App() {
                   )}
                 </div>
 
-                {(modalConfig.protocol === 'ssh' || !modalConfig.protocol) && (
+                {(isSshProtocol(modalConfig.protocol)) && (
                   <div className="form-group">
                     <label>AUTHENTICATION METHOD</label>
                     <CustomSelect
@@ -691,7 +765,7 @@ export default function App() {
                   </div>
                 )}
 
-                {(modalConfig.protocol === 'ssh' || !modalConfig.protocol) && modalConfig.authMethod === 'password' && (
+                {(isSshProtocol(modalConfig.protocol)) && modalConfig.authMethod === 'password' && (
                   <div className="form-group">
                     <label>PASSWORD</label>
                     <input type="password" placeholder="••••••••" value={modalConfig.password || ''}
@@ -699,7 +773,7 @@ export default function App() {
                   </div>
                 )}
 
-                {(modalConfig.protocol === 'ssh' || !modalConfig.protocol) && modalConfig.authMethod === 'key' && (
+                {(isSshProtocol(modalConfig.protocol)) && modalConfig.authMethod === 'key' && (
                   <div className="form-row">
                     <div className="form-group">
                       <label>KEY FILE PATH</label>

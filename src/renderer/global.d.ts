@@ -8,7 +8,8 @@ export interface SshConfig {
   password?: string;
   keyPath?: string;
   passphrase?: string;
-  protocol?: 'ssh' | 'ftp' | 'telnet' | 'local';
+  // 'sftp' connects over SSH but lays the panel out files-first
+  protocol?: 'ssh' | 'sftp' | 'ftp' | 'telnet' | 'local';
   secure?: boolean; // FTPS
 }
 
@@ -46,6 +47,7 @@ export interface ElectronApi {
   onSshOutput: (callback: (tabId: string, data: Uint8Array | string) => void) => () => void;
   onSshClose: (callback: (tabId: string, reason: string) => void) => () => void;
   onSshError: (callback: (tabId: string, message: string) => void) => () => void;
+  onSshShellUnavailable: (callback: (tabId: string, message: string) => void) => () => void;
 
   // Sessions
   getSavedSessions: () => Promise<SshConfig[]>;

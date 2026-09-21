@@ -31,7 +31,7 @@
 | Area | What you get |
 |---|---|
 | **SSH** | Password and private-key auth, trust-on-first-use host key verification against a private `known_hosts`, clear refusal on key change (MITM protection) |
-| **SFTP** | Integrated file manager per session: browse, upload (dialog + drag & drop), download, rename, mkdir, delete, copy path/name, live transfer progress |
+| **SFTP** | Integrated file manager per session: browse, upload (dialog + drag & drop), download, rename, mkdir, delete, copy path/name, live transfer progress. Works against hosts that refuse an interactive shell (NAS with SSH disabled, chrooted/SFTP-only accounts) — such sessions open in files-only mode instead of failing. SFTP is also a protocol of its own in the connect dialog: the session opens straight into the file manager (files-first, full panel) with `SHOW TERMINAL` one click away |
 | **FTP / FTPS** | Explicit-TLS FTP support with the same file manager and progress reporting, plus a small built-in command console |
 | **Telnet** | Raw telnet client with a real IAC parser (partial sequences across packets) and NAWS window-size negotiation |
 | **Local terminal** | Login shell (`zsh -l`) inside the app, so your `~/.zprofile` PATH additions work; forces a UTF-8 locale for correct Cyrillic input under a GUI launch |

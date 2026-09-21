@@ -22,6 +22,13 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('ssh-error', subscription);
     return () => ipcRenderer.removeListener('ssh-error', subscription);
   },
+  // The server refused the interactive shell (SFTP-only host) - the panel keeps
+  // the connection for the file manager and runs in files-only mode
+  onSshShellUnavailable: (callback) => {
+    const subscription = (event, tabId, message) => callback(tabId, message);
+    ipcRenderer.on('ssh-shell-unavailable', subscription);
+    return () => ipcRenderer.removeListener('ssh-shell-unavailable', subscription);
+  },
 
   // ─── Sessions Store ────────────────────────────────────────────────────────
   getSavedSessions: () => ipcRenderer.invoke('sessions-get'),

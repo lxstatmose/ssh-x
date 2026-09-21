@@ -137,9 +137,15 @@ function getSFTP(tabId) {
   return promise;
 }
 
-function connectSSH(tabId, config, onData, onClose, onError) {
+function connectSSH(tabId, config, onData, onClose, onError, onShellUnavailable) {
   // Clean up existing if any
   disconnectSSH(tabId);
+
+  // Optional notification used when the server refuses the interactive shell
+  // but the connection itself stays usable (see the shell error handler below)
+  const notifyShellUnavailable = typeof onShellUnavailable === 'function'
+    ? onShellUnavailable
+    : () => {};
 
   const conn = new Client();
   clients.set(tabId, conn);
@@ -172,6 +178,18 @@ function connectSSH(tabId, config, onData, onClose, onError) {
     }
   } else {
     connConfig.password = config.password;
+
+    // Some hosts (embedded NAS boxes, SFTP-only platforms, PAM setups with
+    // PasswordAuthentication disabled) advertise only the
+    // `keyboard-interactive` method. FileZilla and other clients answer those
+    // prompts transparently, but ssh2 ignores the method unless `tryKeyboard`
+    // is enabled - which looked like "All configured authentication methods
+    // failed" against servers every other tool could reach. Answer every
+    // prompt with the configured password (the only secret we have).
+    connConfig.tryKeyboard = true;
+    conn.on('keyboard-interactive', (name, instructions, lang, prompts, finish) => {
+      finish(prompts.map(() => config.password || ''));
+    });
   }
 
   // Host key verification (Trust On First Use)
@@ -200,8 +218,15 @@ function connectSSH(tabId, config, onData, onClose, onError) {
     // Start terminal shell
     conn.shell({ term: 'xterm-color', cols: 80, rows: 24 }, (err, stream) => {
       if (err) {
-        onError(tabId, `Failed to open shell: ${err.message}`);
-        disconnectSSH(tabId);
+        // A host may refuse the interactive shell while still serving the SFTP
+        // subsystem (NAS with SSH access disabled, SFTP-only/chrooted accounts,
+        // SFTPGo users without a shell, AWS Transfer Family, ...). FileZilla and
+        // other SFTP clients never request a shell, so they keep working.
+        // Tearing the connection down here made the file manager unusable
+        // against every such server ("No active SSH connection for this tab"),
+        // so keep the SSH connection alive and let the renderer switch this
+        // panel into files-only mode.
+        notifyShellUnavailable(tabId, err.message || 'Shell request refused by server');
         return;
       }
 

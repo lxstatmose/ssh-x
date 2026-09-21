@@ -362,6 +362,11 @@ ipcMain.on('ssh-connect', (event, tabId, config) => {
     // onError callback
     (id, message) => {
       if (mainWindow) mainWindow.webContents.send('ssh-error', id, message);
+    },
+    // onShellUnavailable callback: the host refused the interactive shell but
+    // the connection (and therefore SFTP) stays usable - files-only mode
+    (id, message) => {
+      if (mainWindow) mainWindow.webContents.send('ssh-shell-unavailable', id, message);
     }
   );
 });

@@ -5,11 +5,15 @@ import { SftpExplorer } from './SftpExplorer';
 import { FtpExplorer } from './FtpExplorer';
 import { CustomSelect } from './CustomSelect';
 import { SshConfig } from '../global';
+import { showToast } from './Dialogs';
 
 interface PanelState {
   id: string;
   type: 'ssh' | 'ftp' | 'telnet' | 'local' | 'new';
   config?: SshConfig;
+  // File-transfer session (SFTP/FTP): the panel opens with the file manager
+  // filling it; MINIMIZE FILES brings the terminal/console back
+  filesFirst?: boolean;
 }
 
 interface SessionTabProps {
@@ -20,6 +24,9 @@ interface SessionTabProps {
   splitDirections?: ('horizontal' | 'vertical')[];
   onClosePanel: (panelId: string) => void;
   onLaunchSsh?: (panelId: string, config: SshConfig) => void;
+  // Launch any saved session (ssh/ftp/telnet/local) into an empty split pane -
+  // the protocol decides what kind of panel is created
+  onLaunchSession?: (panelId: string, config: SshConfig) => void;
   onLaunchLocal?: (panelId: string) => void;
   onSaveSession?: (config: SshConfig) => void;
 }
@@ -59,10 +66,11 @@ const PanelContent: React.FC<{
   onClose: () => void;
   savedSessions: SshConfig[];
   onLaunchSsh: (config: SshConfig) => void;
+  onLaunchSession: (config: SshConfig) => void;
   onLaunchLocal: () => void;
   onSaveSession?: (config: SshConfig) => void;
   isActiveTab: boolean;
-}> = ({ panel, showCloseBtn, onClose, savedSessions, onLaunchSsh, onLaunchLocal, onSaveSession, isActiveTab }) => {
+}> = ({ panel, showCloseBtn, onClose, savedSessions, onLaunchSsh, onLaunchSession, onLaunchLocal, onSaveSession, isActiveTab }) => {
   if (panel.type === 'new') {
     return (
       <NewPanelPicker
@@ -70,6 +78,7 @@ const PanelContent: React.FC<{
         showCloseBtn={showCloseBtn}
         onClose={onClose}
         onLaunchSsh={onLaunchSsh}
+        onLaunchSession={onLaunchSession}
         onLaunchLocal={onLaunchLocal}
       />
     );
@@ -79,6 +88,7 @@ const PanelContent: React.FC<{
       panelId={panel.id}
       type={panel.type}
       config={panel.config}
+      filesFirst={panel.filesFirst}
       isActiveTab={isActiveTab}
       onClose={onClose}
       showCloseBtn={showCloseBtn}
@@ -91,7 +101,7 @@ const PanelContent: React.FC<{
 export const SessionTab: React.FC<SessionTabProps> = ({
   panels, isActive, savedSessions = [],
   splitDirections = [],
-  onClosePanel, onLaunchSsh, onLaunchLocal, onSaveSession
+  onClosePanel, onLaunchSsh, onLaunchSession, onLaunchLocal, onSaveSession
 }) => {
   const rows = buildRows(panels, splitDirections);
 
@@ -137,6 +147,7 @@ export const SessionTab: React.FC<SessionTabProps> = ({
                       onClose={() => onClosePanel(panel.id)}
                       savedSessions={savedSessions}
                       onLaunchSsh={(config) => onLaunchSsh?.(panel.id, config)}
+                      onLaunchSession={(config) => onLaunchSession?.(panel.id, config)}
                       onLaunchLocal={() => onLaunchLocal?.(panel.id)}
                       onSaveSession={onSaveSession}
                       isActiveTab={isActive}
@@ -163,11 +174,16 @@ interface NewPanelPickerProps {
   showCloseBtn: boolean;
   onClose: () => void;
   onLaunchSsh: (config: SshConfig) => void;
+  // Saved sessions carry their own protocol: dispatching them through the SSH
+  // launcher turned a saved local terminal into an SSH panel pointing at an
+  // empty host ("SSH CONNECTION CLOSED"), and did the same to saved
+  // FTP/telnet sessions.
+  onLaunchSession: (config: SshConfig) => void;
   onLaunchLocal: () => void;
 }
 
 const NewPanelPicker: React.FC<NewPanelPickerProps> = ({
-  savedSessions, showCloseBtn, onClose, onLaunchSsh, onLaunchLocal
+  savedSessions, showCloseBtn, onClose, onLaunchSsh, onLaunchSession, onLaunchLocal
 }) => {
   const [form, setForm] = useState<SshConfig>({ ...emptyConn });
 
@@ -191,7 +207,7 @@ const NewPanelPicker: React.FC<NewPanelPickerProps> = ({
                 key={sess.id}
                 className="sftp-item"
                 style={{ cursor: 'pointer' }}
-                onClick={() => onLaunchSsh(sess)}
+                onClick={() => onLaunchSession(sess)}
               >
                 <span style={{ minWidth: '55px', fontSize: '11px', color: 'var(--gray-600)', flexShrink: 0 }}>
                   {(sess.protocol || 'ssh').toUpperCase()}
@@ -201,7 +217,7 @@ const NewPanelPicker: React.FC<NewPanelPickerProps> = ({
                 </span>
                 <button
                   className="action-btn-small"
-                  onClick={(e) => { e.stopPropagation(); onLaunchSsh(sess); }}
+                  onClick={(e) => { e.stopPropagation(); onLaunchSession(sess); }}
                   style={{ marginLeft: '8px', flexShrink: 0 }}
                 >
                   OPEN
@@ -289,7 +305,7 @@ const NewPanelPicker: React.FC<NewPanelPickerProps> = ({
             className="btn btn-primary"
             style={{ marginTop: '8px' }}
             onClick={() => {
-              if (!form.host || !form.username) { alert('Host and Username are required'); return; }
+              if (!form.host || !form.username) { showToast('Host and Username are required', 'error'); return; }
               onLaunchSsh(form);
             }}
           >
@@ -355,13 +371,15 @@ interface SinglePanelProps {
   panelId: string;
   type: 'ssh' | 'ftp' | 'telnet' | 'local';
   config?: SshConfig;
+  // File-transfer sessions (SFTP/FTP) open with the file manager filling the panel
+  filesFirst?: boolean;
   isActiveTab: boolean;
   onClose: () => void;
   showCloseBtn: boolean;
   onSaveSession?: (config: SshConfig) => void;
 }
 
-const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActiveTab, onClose, showCloseBtn, onSaveSession }) => {
+const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, filesFirst, isActiveTab, onClose, showCloseBtn, onSaveSession }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstanceRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -372,10 +390,20 @@ const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActi
   // first paint, and the disconnected overlay below must not flash for a frame
   const [isConnecting, setIsConnecting] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Set when the server refuses the interactive shell (SFTP-only host): the
+  // connection stays up for the file manager, the terminal is just not usable
+  const [shellUnavailable, setShellUnavailable] = useState<string | null>(null);
   // Bumping this re-runs the connection effect (fresh connId + terminal)
   // without remounting the panel - the RECONNECT button increments it.
   const [reconnectKey, setReconnectKey] = useState(0);
   const [showSftp, setShowSftp] = useState(type === 'ssh' || type === 'ftp');
+  // Files-first layout (SFTP/FTP sessions): the file manager fills the panel and
+  // the terminal stays hidden until the user asks for it (MINIMIZE FILES).
+  // The preference is kept across reconnects, but the files-first layout is only
+  // applied while connected, so connecting progress and connection errors remain
+  // visible in the terminal.
+  const [filesPref, setFilesPref] = useState(!!filesFirst);
+  const filesFirstLayout = filesPref && showSftp && (type === 'ssh' || type === 'ftp') && isConnected;
   const [sftpWidth, setSftpWidth] = useState(250);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
@@ -435,6 +463,11 @@ const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActi
   // Helper: fit terminal and send new size to backend
   const fitAndResize = (connId: string) => {
     if (!fitAddonRef.current || !termInstanceRef.current) return;
+    // Never fit a hidden / zero-sized container: the fit addon clamps empty
+    // boxes to 2x1 and we would push that bogus window size to the remote
+    // shell (files-first mode hides the terminal).
+    const container = terminalRef.current;
+    if (container && (container.clientWidth === 0 || container.clientHeight === 0)) return;
     fitAddonRef.current.fit();
     sendResize(connId, termInstanceRef.current.cols, termInstanceRef.current.rows);
   };
@@ -468,6 +501,19 @@ const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActi
       return () => clearTimeout(timer);
     }
   }, [isActiveTab, connectionId, type]);
+
+  // Refit the terminal when it becomes visible again after SHOW TERMINAL,
+  // and let the file manager take the space when the panel flips to files-first
+  useEffect(() => {
+    if (!filesFirstLayout && isActiveTab && connectionId) {
+      const timer = setTimeout(() => {
+        fitAndResize(connectionId);
+        termInstanceRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filesFirstLayout]);
 
   // ResizeObserver: refit terminal when container size changes
   useEffect(() => {
@@ -538,6 +584,7 @@ const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActi
   useEffect(() => {
     setIsConnecting(true);
     setError(null);
+    setShellUnavailable(null);
 
     const connId = `${panelId}-${Math.random().toString(36).substring(2, 9)}`;
     setConnectionId(connId);
@@ -603,6 +650,7 @@ const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActi
     let cleanupOutput = () => {};
     let cleanupClose = () => {};
     let cleanupError = () => {};
+    let cleanupShellUnavailable = () => {};
 
     if (type === 'ssh' && config) {
       cleanupData = term.onData((data) => { window.api.writeSshData(connId, data); }).dispose;
@@ -616,6 +664,18 @@ const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActi
       });
       cleanupError = window.api.onSshError((id, msg) => {
         if (id === connId) { term.write(`\r\n*** SSH ERROR: ${msg} ***\r\n`); setError(msg); setIsConnected(false); setIsConnecting(false); }
+      });
+      // Some hosts (NAS with SSH disabled, SFTP-only/chrooted accounts, ...)
+      // answer SFTP but refuse the interactive shell. The SSH connection is
+      // still alive, so keep the panel mounted and let the file manager run -
+      // the panel is switched to files-only mode instead of failing.
+      cleanupShellUnavailable = window.api.onSshShellUnavailable((id, msg) => {
+        if (id !== connId) return;
+        setShellUnavailable(msg);
+        term.write(`\r\n*** NO INTERACTIVE SHELL: ${msg} ***\r\n`);
+        term.write('*** FILES-ONLY MODE - USE THE FILE MANAGER ON THE RIGHT ***\r\n');
+        setIsConnected(true);
+        setIsConnecting(false);
       });
     } else if (type === 'ftp' && config) {
       // FTP: buffer input until Enter, then send command
@@ -696,7 +756,7 @@ const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActi
     }
 
     return () => {
-      cleanupData(); cleanupOutput(); cleanupClose(); cleanupError();
+      cleanupData(); cleanupOutput(); cleanupClose(); cleanupError(); cleanupShellUnavailable();
       if (type === 'ssh') window.api.disconnectSSH(connId);
       else if (type === 'ftp') window.api.disconnectFtp(connId);
       else if (type === 'telnet') window.api.disconnectTelnet(connId);
@@ -707,12 +767,16 @@ const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActi
   }, [panelId, type, reconnectKey]); // config intentionally excluded - connection should not restart on config change; reconnectKey re-runs it on RECONNECT
 
   const panelTitle = type === 'ssh' && config
-    ? `[SSH: ${config.username}@${config.host}:${config.port}]`
+    ? filesFirst
+      ? `[SFTP: ${config.username}@${config.host}:${config.port}]`
+      : `[SSH: ${config.username}@${config.host}:${config.port}]`
     : type === 'ftp' && config
     ? `[FTP: ${config.username}@${config.host}:${config.port}]`
     : type === 'telnet' && config
     ? `[TELNET: ${config.host}:${config.port}]`
-    : `[LOCAL SHELL]`;
+    : config?.name
+    ? `[LOCAL: ${config.name}]`
+    : '[LOCAL SHELL]';
 
   const handleSaveClick = () => {
     if (!config) return;
@@ -731,7 +795,7 @@ const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActi
   };
 
   return (
-    <div style={{ display: 'flex', flex: 1, width: '100%', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, width: '100%', height: '100%', overflow: 'hidden' }}>
       {showSavePrompt && (
         <PromptDialog
           title="SAVE SESSION"
@@ -741,97 +805,118 @@ const SinglePanel: React.FC<SinglePanelProps> = ({ panelId, type, config, isActi
           onCancel={handleSaveCancel}
         />
       )}
-      {(type === 'ssh' || type === 'ftp') && showSftp && isConnected && connectionId && (
-        <div style={{ width: `${sftpWidth}px`, display: 'flex', height: '100%' }}>
-          {type === 'ssh' ? (
-            <SftpExplorer tabId={connectionId} isConnected={isConnected} onRefreshTrigger={refreshTrigger} />
-          ) : (
-            <FtpExplorer tabId={connectionId} isConnected={isConnected} onRefreshTrigger={refreshTrigger} />
+      {/* Panel header - rendered outside the terminal pane so it stays visible
+          in every layout (terminal, files-first, files-only). CLOSE, SYNC, SAVE
+          and the layout toggle must always be reachable. */}
+      <div className="panel-header">
+        <span className="panel-title">
+          {panelTitle}
+          {isConnecting && ' (CONNECTING...)'}
+          {shellUnavailable && ' (FILES ONLY)'}
+          {error && ' (ERROR)'}
+          {!isConnected && !isConnecting && !error && ' (DISCONNECTED)'}
+        </span>
+        <span className="panel-actions">
+          {!isConnected && !isConnecting && (
+            <button className="action-btn-small" onClick={() => setReconnectKey(k => k + 1)}>
+              RECONNECT
+            </button>
           )}
-        </div>
-      )}
-      {(type === 'ssh' || type === 'ftp') && showSftp && isConnected && (
-        <div className="split-divider" onMouseDown={startResizing} />
-      )}
-      <div className="split-pane" style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-        <div className="panel-header">
-          <span className="panel-title">
-            {panelTitle}
-            {isConnecting && ' (CONNECTING...)'}
-            {error && ' (ERROR)'}
-            {!isConnected && !isConnecting && !error && ' (DISCONNECTED)'}
-          </span>
-          <span className="panel-actions">
-            {!isConnected && !isConnecting && (
-              <button className="action-btn-small" onClick={() => setReconnectKey(k => k + 1)}>
+          {/* Files-first layout toggle: MAXIMIZE fills the panel with the file
+              manager, MINIMIZE brings the terminal/console back. Only offered
+              while files are actually shown. */}
+          {(type === 'ssh' || type === 'ftp') && isConnected && showSftp && (
+            <button className="action-btn-small" onClick={() => setFilesPref(v => !v)}>
+              {filesFirstLayout ? 'MINIMIZE FILES' : 'MAXIMIZE FILES'}
+            </button>
+          )}
+          {(type === 'ssh' || type === 'ftp') && isConnected && !filesFirstLayout && (
+            <button className="action-btn-small" onClick={() => setShowSftp(!showSftp)}>
+              {showSftp ? 'HIDE FILES' : 'SHOW FILES'}
+            </button>
+          )}
+          {(type === 'ssh' || type === 'ftp') && isConnected && (
+            <button className="action-btn-small" onClick={() => setRefreshTrigger(p => p + 1)}>
+              SYNC
+            </button>
+          )}
+          {(type === 'ssh' || type === 'ftp' || type === 'telnet') && config && (
+            <button className="action-btn-small" onClick={handleSaveClick}>
+              SAVE
+            </button>
+          )}
+          {showCloseBtn && (
+            <button className="action-btn-small btn-danger" onClick={onClose}>CLOSE</button>
+          )}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        {(type === 'ssh' || type === 'ftp') && showSftp && isConnected && connectionId && (
+          <div style={{
+            width: filesFirstLayout ? '100%' : `${sftpWidth}px`,
+            flex: filesFirstLayout ? 1 : undefined,
+            display: 'flex',
+            height: '100%',
+            minWidth: 0,
+          }}>
+            {type === 'ssh' ? (
+              <SftpExplorer tabId={connectionId} isConnected={isConnected} onRefreshTrigger={refreshTrigger} />
+            ) : (
+              <FtpExplorer tabId={connectionId} isConnected={isConnected} onRefreshTrigger={refreshTrigger} />
+            )}
+          </div>
+        )}
+        {(type === 'ssh' || type === 'ftp') && showSftp && isConnected && !filesFirstLayout && (
+          <div className="split-divider" onMouseDown={startResizing} />
+        )}
+        <div className="split-pane" style={{ flex: 1, position: 'relative', minWidth: 0, display: filesFirstLayout ? 'none' : 'flex' }}>
+            {error && (
+            <div className="terminal-overlay-message alert-error">
+              <p>CONNECTION FAILED</p>
+              <p style={{ marginTop: '5px', fontSize: '12px' }}>{error}</p>
+              <button
+                className="btn"
+                style={{ marginTop: '12px', whiteSpace: 'nowrap' }}
+                onClick={() => { setError(null); setReconnectKey(k => k + 1); }}
+              >
                 RECONNECT
               </button>
-            )}
-            {(type === 'ssh' || type === 'ftp') && isConnected && (
-              <button className="action-btn-small" onClick={() => setShowSftp(!showSftp)}>
-                {showSftp ? 'HIDE FILES' : 'SHOW FILES'}
-              </button>
-            )}
-            {(type === 'ssh' || type === 'ftp') && isConnected && (
-              <button className="action-btn-small" onClick={() => setRefreshTrigger(p => p + 1)}>
-                SYNC
-              </button>
-            )}
-            {(type === 'ssh' || type === 'ftp' || type === 'telnet') && config && (
-              <button className="action-btn-small" onClick={handleSaveClick}>
-                SAVE
-              </button>
-            )}
-            {showCloseBtn && (
-              <button className="action-btn-small btn-danger" onClick={onClose}>CLOSE</button>
-            )}
-          </span>
-        </div>
-        {error && (
-          <div className="terminal-overlay-message alert-error">
-            <p>CONNECTION FAILED</p>
-            <p style={{ marginTop: '5px', fontSize: '12px' }}>{error}</p>
-            <button
-              className="btn"
-              style={{ marginTop: '12px', whiteSpace: 'nowrap' }}
-              onClick={() => { setError(null); setReconnectKey(k => k + 1); }}
-            >
-              RECONNECT
-            </button>
-          </div>
-        )}
-        {!error && !isConnected && !isConnecting && (
-          <div className="terminal-overlay-message">
-            <p>CONNECTION CLOSED</p>
-            <button
-              className="btn"
-              style={{ marginTop: '12px', whiteSpace: 'nowrap' }}
-              onClick={() => setReconnectKey(k => k + 1)}
-            >
-              RECONNECT
-            </button>
-          </div>
-        )}
-        <div className="terminal-container" ref={terminalRef} onContextMenu={handleTermContextMenu} onClick={handleTerminalClick} />
-
-        {/* Terminal context menu */}
-        {termContextMenu && (() => {
-          const menuWidth = 150;
-          const menuHeight = 130;
-          let x = termContextMenu.x;
-          let y = termContextMenu.y;
-          if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
-          if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
-          return (
-            <div className="context-menu" style={{ left: x, top: y }}>
-              <button className="context-menu-item" onClick={handleTermMenuCopy}>COPY</button>
-              <button className="context-menu-item" onClick={handleTermMenuPaste}>PASTE</button>
-              <div className="context-menu-divider" />
-              <button className="context-menu-item" onClick={handleTermMenuSelectAll}>SELECT ALL</button>
-              <button className="context-menu-item" onClick={handleTermMenuClear}>CLEAR</button>
             </div>
-          );
-        })()}
+          )}
+          {!error && !isConnected && !isConnecting && (
+            <div className="terminal-overlay-message">
+              <p>CONNECTION CLOSED</p>
+              <button
+                className="btn"
+                style={{ marginTop: '12px', whiteSpace: 'nowrap' }}
+                onClick={() => setReconnectKey(k => k + 1)}
+              >
+                RECONNECT
+              </button>
+            </div>
+          )}
+          <div className="terminal-container" ref={terminalRef} onContextMenu={handleTermContextMenu} onClick={handleTerminalClick} />
+  
+          {/* Terminal context menu */}
+          {termContextMenu && (() => {
+            const menuWidth = 150;
+            const menuHeight = 130;
+            let x = termContextMenu.x;
+            let y = termContextMenu.y;
+            if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 10;
+            if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
+            return (
+              <div className="context-menu" style={{ left: x, top: y }}>
+                <button className="context-menu-item" onClick={handleTermMenuCopy}>COPY</button>
+                <button className="context-menu-item" onClick={handleTermMenuPaste}>PASTE</button>
+                <div className="context-menu-divider" />
+                <button className="context-menu-item" onClick={handleTermMenuSelectAll}>SELECT ALL</button>
+                <button className="context-menu-item" onClick={handleTermMenuClear}>CLEAR</button>
+              </div>
+            );
+          })()}
+        </div>
       </div>
     </div>
   );

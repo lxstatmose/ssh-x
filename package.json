@@ -1,6 +1,6 @@
 {
   "name": "ssh-x",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Retro monochrome SSH, SFTP, FTP/FTPS, Telnet and local terminal client for macOS",
   "main": "src/main/main.js",
   "author": "lxstatmose",
